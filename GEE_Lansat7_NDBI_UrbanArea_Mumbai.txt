@@ -1,0 +1,129 @@
+//Operating on LANDSAT 7 images
+var spatialFiltered = ls7.filterBounds(mumbai); // Spatial Filtering 
+print('spatialFiltered', spatialFiltered);
+
+var temporalFiltered = spatialFiltered.filterDate('1999-01-01', '2019-01-01'); // Temporal Firtering
+print('temporalFiltered', temporalFiltered);
+
+var cloud_free = temporalFiltered.filter(ee.Filter.lt('CLOUD_COVER',1)); //Filtering out Cloudy Images 
+print('Cloud Free Images',cloud_free);
+
+var bombay = /* color: #98ff00 */ee.Geometry.Point([72.87795975247764, 19.157180219159784]); //Point on Map
+
+Map.setCenter(72.87795975247764, 19.157180219159784,12);
+
+var sorted = cloud_free.sort('DATE_ACQUIRED'); //Sorting
+
+print('Sorted Cloud Free Images :', sorted);
+var img = sorted;
+var img2 = cloud_free;
+
+var Image1 = ee.Image(img.first());
+//print(Image1);
+
+var Images =img.toList(122);
+print(Images);
+
+var Images_c =img2.toList(122);
+
+var Image2 = ee.Image(Images_c.get(25));
+
+//NDBI example
+print(Image2);
+var clipped = Image2.clip(mumbai);
+var swir = clipped.select('B5');
+var nir  = clipped.select('B4');
+var ndbi = swir.subtract(nir).divide(swir.add(nir)).rename('NDBI');
+var ndbiParams = {min: -1, max: 1};
+  
+Map.addLayer(ndbi , ndbiParams, 'NDBI');
+var datamask = ndbi;
+
+// Create a binary mask.
+var masked = datamask.gte(0.10);
+    
+Map.addLayer(masked, {min:0, max:1}, 'Built_Up');
+
+
+//Main process 
+
+//False Color Composite
+var visParams = {bands: ['B5', 'B4', 'B3'], min:0, max:100, gamma:[0.95,1.1,1]}; // Red - SWIR ; Green - NIR ; Blue - R
+
+Map.addLayer(img, visParams, 'False Color Composite');
+
+
+var features = ee.List([]);
+var single_band = ee.List([]);
+var count=0;
+
+for(var i =0;i<122; i++)
+{
+    var trial = ee.Image(Images.get(i));
+
+    var clipped = trial.clip(mumbai);
+    
+    var swir = clipped.select('B5');
+    var nir  = clipped.select('B4');
+    var ndbi = swir.subtract(nir).divide(swir.add(nir)).rename('NDBI');
+  
+    var datamask = ndbi;
+
+    // Create a binary mask.
+    var masked = datamask.lte(0.11).not();
+    
+    // Map.addLayer(masked);
+    
+    var clip_land = clipped.updateMask(masked).addBands(ndbi);
+   
+    var area = ee.Image.pixelArea();
+   
+    var BU_Area = masked.multiply(area).rename('Built_Up_Area');
+   
+   
+    //print('Built Up Area :', BU_Area);
+   
+    clip_land = clip_land.addBands(BU_Area);
+   
+   
+    
+    var stats = BU_Area.reduceRegion({
+      reducer: ee.Reducer.sum(), 
+      geometry: mumbai, 
+      scale: 30,
+    });
+    //print(stats.get('Built_Up_Area'));
+    
+    clip_land = clip_land.set(stats);
+  
+  
+    var check = (stats.get('Built_Up_Area'));
+ 
+   
+    features = features.insert(i,clip_land);
+  
+    single_band = single_band.insert(i,ee.Image(clip_land.select('Built_Up_Area')));
+
+}
+
+features = features.filter(ee.Filter.gt('Built_Up_Area',0)); //Filtering out Cloudy Images 
+
+single_band = single_band.filter(ee.Filter.gt('Built_Up_Area',0)); //Filtering out Cloudy Images 
+
+
+print('Clipped Collection : ',features);
+
+var chart = ui.Chart.image.series({
+imageCollection: single_band,
+region: mumbai,
+reducer: ee.Reducer.sum(),
+scale: 60
+});
+
+// Add the chart to the map.
+chart.style().set({
+  position: 'bottom-right',
+  width: '700px',
+  height: '500px'
+});
+Map.add(chart);

@@ -1,0 +1,134 @@
+/*
+Imports 
+var geometry : MultiPoint, 0 vertices
+	type: MultiPoint
+	coordinates: []
+
+var imageCollection: ImageCollection "USGS Lansat 8 Collection 1 tier 1 and Real-Time data Raw Scenes"
+	type: ImageCollection
+	id: LANDSAT/LC08/C01/T1_RT
+	version: 1595596766658662
+	bands: []
+var geometry2: Polygon,35 vertices
+	type: Polygon
+	coordinates: List (1 element)
+		0: List (36 elements)
+ 		0: [77.3919896302632,13.092575440061232]
+   		1: [77.39061633072765,13.004281400886974]
+		2: [77.4084685132458,12.962799079178883]
+		3: [77.40297548811213,12.895877557227026]
+		4: [77.4524123677279,12.870442652616838]
+		5: [77.41121491991908,12.804835549789892]
+		6: [77.49772948480063,12.760641489844282]
+		7: [77.51695495759259,12.791444197193536]
+		8: [77.54441990462703,12.792783353989558]
+		9: [77.5924835615092,12.795461652262668]
+		10: [77.63780177003298,12.783408031032018]
+		11: [77.67762407867804,12.795461750887224]
+		12: [77.69273035163894,12.810192018383068]
+		13: [77.73598234019892,12.832956123994578]
+		14: [77.76276619925216,12.881152377986837]
+		15: [77.7888579101633,12.839649602755435]
+		16: [77.8328017966212,12.882491092700393]
+		17: [77.86301375521327,12.890523059691093]
+		18: [77.85065398061897,12.929340566313728]
+		19: [77.82593552760136,12.948077877215423]
+		20: [77.81769603294129,12.976181215308424]
+		21: [77.78885784972067,12.982872006466902]
+		22: [77.7641407340252,13.067161617759531]
+		23: [77.76963284812098,13.09525237993256]
+		24: [77.76001997332833,13.11130141875595]
+		25: [77.7428552208919,13.132030594063925]
+		26: [77.71470249793947,13.12734940892143]
+		27: [77.66251914203599,13.135373225368205]
+		28: [77.61308471942675,13.125347286644057]
+		29: [77.57188490143778,13.16078092051645]
+		30: [77.5416731826042,13.146071878195633]
+		31: [77.50322232407552,13.146071623946648]
+		32: [77.49086225519068,13.13470511015045]
+		33: [77.45515897523683,13.130023935282775]
+		34: [77.42357524319755,13.119324271456025]
+		35: [77.3919896302632,13.092575440061232]
+
+
+
+
+
+
+
+*/
+//REF POINT
+var point = ee.Geometry.Point(77.66427, 12.93477);
+
+
+
+//POLYGON
+var bglr = /* color: #d63000 */geometry2;
+
+
+
+//DATASET
+var imgcollect = ee.ImageCollection("LANDSAT/LC08/C01/T1_RT")
+    .filterBounds(point)
+    .sort('CLOUD_COVER', true)
+    .sort('CLOUD_COVER_LAND', true) 
+    .filterDate('2013-01-01', '2019-01-01')
+    .filter(ee.Filter.lt('CLOUD_COVER',5))
+print('imgcollect', imgcollect);
+var dataset = imgcollect.filter(ee.Filter.calendarRange({start: 4, field: 'month'}));
+print('month filtered',dataset);
+
+//LOADING IMAGE
+var scene = ee.Image("LANDSAT/LC08/C01/T1_RT/LC08_144051_20140211");
+print('scene:', scene);
+
+
+
+//METADATA
+var when = scene.get('DATE_ACQUIRED');
+var row = scene.get('WRS_ROW');
+var path = scene.get('WRS_PATH');
+
+
+
+//NDBI,NDVI,NDWI
+var swir = scene.select('B5');
+var nir = scene.select('B4');
+var ndbi = scene.normalizedDifference(['B6', 'B5']).rename('NDBI');
+print('ndbi:', ndbi);
+var ndbiParams = {min: -1, max: 1, palette: ['black', 'black', 'white']};
+var ndvwiParams = {min: -1, max: 1, palette: ['white', 'black', 'black']};
+var ndvi = scene.normalizedDifference(['B5', 'B4']);
+var ndwi = scene.normalizedDifference(['B3', 'B5']);
+
+
+
+//DISPLAY
+Map.centerObject(point, 12);
+var vizParams = { bands:['B5','B4','B3'], min: 0, max: 50000, gamma:[0.95,1.1,1]};
+//Map.addLayer(point, {}, 'Point reference for image collection selection');
+//Map.addLayer(scene, {bands: ['B4', 'B3', 'B2']}, 'Landsat 8 scene composite');//RGB
+//Map.addLayer(ndbi, ndbiParams, 'NDBI image');
+//Map.addLayer(scene,vizParams,'VizData');
+//Map.addLayer(ndvi, ndvwiParams, 'NDvI image');
+//Map.addLayer(ndwi, ndvwiParams, 'NDwI image');
+
+      //URBANNDVINDWI
+var bare = ndvi.lt(0.1185).and(ndwi.lt(0));
+//Map.setOptions('satellite');
+    
+//var neg = ee.Image.constant(255);
+//var bare = ndbi.lt(-0.027).and(neg.lt(0));
+Map.addLayer(bare.updateMask(bare), {}, 'bare');
+
+
+
+//CHART
+var chart = ui.Chart.image.series ({imageCollection:ndbi,region:bglr,
+reducer:ee.Reducer.mean(),scale:200})
+chart.style().set({position:'bottom-right',width:'500px',height:'300px'})
+//Map.add(chart);
+//Map.addLayer(ndbi,{min: -0.025,max: 0.015},'thersholdViz');
+var clipped = bare.clip(bglr);
+Map.addLayer(clipped, ndbiParams, 'clipped composite');
+print("Done");
